@@ -1,3 +1,4 @@
+/*global  */
 /* eslint no-console: 0 */
 
 const path = require('path');
@@ -5,21 +6,25 @@ const express = require('express');
 const webpack = require('webpack');
 const webpackMiddleware = require('webpack-dev-middleware');
 const webpackHotMiddleware = require('webpack-hot-middleware');
-const config = require('./webpack.config.js');
+const webpackConfig = require('./webpack.config.js');
 const axios = require('axios')
 const isDeveloping = process.env.NODE_ENV !== 'production';
 const port = isDeveloping ? 3000 : process.env.PORT;
 const app = express();
-const url = `https://api.havenondemand.com/1/api/async/`
-const API_KEY = require('./config').API;
+const config = require('./config');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth').OAuthStrategy;
 let callbackUrl = "";
+const bodyParser = require('body-parser');
+const jsonParser = bodyParser.json();
+const urlencodedParser = bodyParser.urlencoded({extended: false});
+const models = require("./models");
+const morgan = require('morgan');
 
 if (isDeveloping) {
-  const compiler = webpack(config);
+  const compiler = webpack(webpackConfig);
   const middleware = webpackMiddleware(compiler, {
-    publicPath: config.output.publicPath,
+    publicPath: webpackConfig.output.publicPath,
     contentBase: 'src',
     stats: {
       colors: true,
@@ -30,24 +35,31 @@ if (isDeveloping) {
       modules: false
     }
   });
-
+  app.use(morgan('combined'));
   app.use(middleware);
   app.use(webpackHotMiddleware(compiler));
+  app.get('/api/highlight', getHighlight);
+  app.get('/api/words', getWords);
+  app.post('/api/words', postWords);
   app.get('*', function response(req, res) {
     res.write(middleware.fileSystem.readFileSync(path.join(__dirname, 'dist/index.html')));
     res.end();
   });
 
-  callbackUrl = 'http://local.host:8080/api/youTube/auth/callback'
+  // callbackUrl = 'http://local.host:8080/api/youTube/auth/callback'
 } else {
   app.use(express.static(__dirname + '/dist'));
+  app.get('/api/highlight', getHighlight);
+  app.get('/api/words', getWords);
+  app.post('/api/words', postWords);
   app.get('*', function response(req, res) {
     res.sendFile(path.join(__dirname, 'dist/index.html'));
   });
 
-  callbackUrl = `https://sozaic.herokuapp.com/api/youTube/auth/callback`
+  // callbackUrl = `https://sozaic.herokuapp.com/api/youTube/auth/callback`
 }
 
+/*
 passport.use(new GoogleStrategy({
     clientID: key.youtube.clientID ||  localApiKeys.youtube.youtubeClientID,
     clientSecret: key.youtube.clientSecret ||  localApiKeys.youtube.youtubeClientSecret,
@@ -60,6 +72,7 @@ passport.use(new GoogleStrategy({
     cb(null, accessToken)
   })
 );
+
 
 appRoute.get('api/youTube/auth', passport.authenticate('google', {scope: [
   // TODO: LOOK UP GMAIL OPTION
@@ -75,21 +88,35 @@ appRoute.get('api/youTube/auth/callback', passport.authenticate('google', {failu
     res.redirect('/#/feed/youtube')
   }
 );
+*/
 
-app.get('/api/highlight', function(req, res) {
+function getHighlight(req, res) {
   const text = req.body;
   const highlightWord = 'sex'
   axios({
     method: 'GET',
-    url: url,
+    url: config.url,
     params: {
-      apikey: API_KEY,
+      apikey: config.API_KEY,
       text: text,
       highlight_expression: highlightWord
     }
   });
-});
+}
 
+function getWords(req, res) {
+  models.Words.findOne({}).then((result) => {
+    res.status(200).json(result);
+  });
+}
+
+function postWords(req, res) {
+  console.log({req_body : req.body});
+  models.Words.remove({}).then(() => {
+    const words = new models.Words(req.body);
+    words.save();
+  });
+}
 
 app.listen(port, '0.0.0.0', function onStart(err) {
   if (err) {
